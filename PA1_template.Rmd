@@ -1,3 +1,6 @@
+```{r, echo=FALSE, include=FALSE }
+require(dplyr)
+```
 ---
 title: "Reproducible Research: Peer Assessment 1"
 output: 
@@ -7,19 +10,194 @@ output:
 
 
 ## Loading and preprocessing the data
+```{r}
+source("get_activity_data.R")
 
+```
 
 
 ## What is mean total number of steps taken per day?
+```{r}
+source("total_steps_by_date.R")
 
+totalStepsByDate <- getTotalStepsByDate(activityDataNoNA)
 
+hist(totalStepsByDate$TotalSteps, 
+     col="red", 
+     main="Total Steps Per Day (10/1/2012-11/30/2012)", 
+     xlab="Total Steps Per Day",
+     ylab="Number of Days")
+```
+
+```{r, echo=FALSE}
+meanTotalStepsPerDay <- getMeanTotalSteps(activityDataNoNA)
+
+medianTotalStepsPerDay <- getMedianTotalSteps(activityDataNoNA)
+```
+
+**Mean Total Steps per Day:** `r meanTotalStepsPerDay`
+
+**Median Total Steps per Day:** `r medianTotalStepsPerDay`
 
 ## What is the average daily activity pattern?
+```{r}
+stepsByInterval <- activityDataNoNA %>%
+    group_by(interval) %>%
+    select(steps) %>%
+    summarise(stepsByInterval = mean(steps))
 
+with(stepsByInterval, {
+  plot(interval, 
+       stepsByInterval, 
+       type="l", 
+       main="Average Number of Steps by 5-Minute Interval\n(10/1/2012-11/30/2012)",
+       xlab = "5-Minute Interval of Day", 
+       ylab="Average Number of Steps")
+})
+```
 
+```{r, echo=FALSE}
+maxMeanSteps <- max(stepsByInterval$stepsByInterval) 
+
+intervalWithMaxMeanSteps <- stepsByInterval[which.max(stepsByInterval$stepsByInterval), ]$interval
+```
+
+**Max Mean Steps of `r maxMeanSteps` occurs during interval `r intervalWithMaxMeanSteps`**
 
 ## Imputing missing values
+_Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data._
 
+_1.  Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)_
 
+```{r, echo=FALSE}
+naIntervals <- activityData[is.na(activityData$steps),]
+
+numberOfIntervalsWithNA <- nrow(naIntervals)
+
+intervalsByDate <- naIntervals %>%
+    group_by(date) %>%
+    select(steps) %>%
+    summarise(stepsByInterval = sum(is.na(steps)))
+
+colnames(intervalsByDate) <- c("Date", "Num NA Intervals")
+
+```
+
+**There are `r numberOfIntervalsWithNA` intervals that do not have values for steps**
+
+```{r}
+intervalsByDate
+```
+
+Note that there are 288 five-minute intervals in one day, and each day with steps missing for at least one interval is missing steps for all intervals that day.
+
+_2.  Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc._
+
+_An NA value in steps for an interval will be replaced by the mean value that interval across the rest of the data.  For example, if interval 1205 has steps of NA, then that NA will be replaced by the mean of all other interval 1205 steps values._
+
+```{r}
+datesWithNA <- intervalsByDate$Date
+ 
+numDatesWithNA <- length(datesWithNA)
+   
+missingDatesWithMeanStepsByInterval <- data.frame(stepsByInterval$steps, rep(datesWithNA[1], times=288), stepsByInterval$interval)
+   
+colnames(missingDatesWithMeanStepsByInterval) <- c("steps", "date", "interval")
+
+for(missingDateIndex in 2:numDatesWithNA) {
+  missingDateData <- data.frame(stepsByInterval$steps, rep(datesWithNA[missingDateIndex], times=288), stepsByInterval$interval)
+    
+  colnames(missingDateData) <- c("steps", "date", "interval")
+    
+  missingDatesWithMeanStepsByInterval <- rbind(missingDatesWithMeanStepsByInterval, missingDateData)
+}
+```
+
+_3.  Create a new dataset that is equal to the original dataset but with the missing data filled in._
+
+```{r}
+activityDataWithMeanValuesForMissingData <- rbind(activityDataNoNA, missingDatesWithMeanStepsByInterval)
+  
+activityDataWithMeanValuesForMissingData <- activityDataWithMeanValuesForMissingData[order(activityDataWithMeanValuesForMissingData$date, activityDataWithMeanValuesForMissingData$interval),]
+  
+#reset row numbers
+rownames(activityDataWithMeanValuesForMissingData) <- NULL
+```
+
+_4._
+  _a.  Make a histogram of the total number of steps taken each day_
+  
+```{r}
+totalStepsByDateWithMeansForMissingData <- aggregate(activityDataWithMeanValuesForMissingData[,1], list(activityDataWithMeanValuesForMissingData[,2]), sum)
+
+colnames(totalStepsByDateWithMeansForMissingData) <- c("Date", "TotalSteps")
+
+hist(totalStepsByDateWithMeansForMissingData$TotalSteps, 
+     col="red", 
+     main="Total Steps Per Day\nWith Interval Means for Missing Intervals\n(10/1/2012-11/30/2012)", 
+     xlab="Total Steps Per Day",
+     ylab="Number of Days")
+```
+
+  _b.  and Calculate and report the mean and median total number of steps taken per day._
+  
+```{r}
+meanTotalStepsWithMeansForMissingData <- getMeanTotalSteps(activityDataWithMeanValuesForMissingData)
+
+medianTotalStepsWithMeansForMissingData <- getMedianTotalSteps(activityDataWithMeanValuesForMissingData)
+```
+
+      **Mean Total Steps per Day:** `r meanTotalStepsWithMeansForMissingData`
+
+      **Median Total Steps per Day:** `r medianTotalStepsWithMeansForMissingData`
+  
+  _c.  Do these values differ from the estimates from the first part of the assignment?_
+      The mean remains the same, as it should, but the median is now `r medianTotalStepsWithMeansForMissingData` but was originally `r medianTotalStepsPerDay`
+  
+  _d.  What is the impact of imputing missing data on the estimates of the total daily number of steps?_
+
+Given that days missing any data were missing all data for that day, imputing missing data with the mean value per interval means that the total steps for each day of missing data equals the mean of total steps per day.  Thus, with eight days missing data, there are eight more days in the total steps range in which the mean of total steps is contained.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+_For this part the weekdays() function may be of some help here. Use the dataset with the filled-in missing values for this part._
+
+Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+
+```{r}
+getDateTypeForDate <- function(dateToCheck) {
+  dateType <- ifelse(weekdays(dateToCheck)=="Saturday" | weekdays(dateToCheck)=="Sunday", "Weekend", "Weekday")
+  dateType
+}
+
+activityDataNoNA$dateType <- as.factor(getDateTypeForDate(activityDataNoNA$date))
+```
+
+_Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data._
+
+```{r}
+stepsByDateTypeAndInterval <- activityDataNoNA %>%
+    group_by(dateType, interval) %>%
+    select(steps) %>%
+    summarise(stepsByDateTypeAndInterval = mean(steps))
+
+par(mfrow=c(2,1))
+
+weekdayStepsByInterval <- stepsByDateTypeAndInterval[stepsByDateTypeAndInterval$dateType=="Weekday", c(2, 3)]
+
+weekendStepsByInterval <- stepsByDateTypeAndInterval[stepsByDateTypeAndInterval$dateType=="Weekend", c(2, 3)]
+
+plot(weekdayStepsByInterval$interval, 
+     weekdayStepsByInterval$steps, 
+     type="l", 
+     main="Average Number of Steps by 5-Minute Interval\nWeekdays: 10/1/2012-11/30/2012",
+     xlab = "5-Minute Interval of Day", 
+     ylab="Average Number of Steps")
+
+plot(weekendStepsByInterval$interval, 
+     weekendStepsByInterval$steps, 
+     type="l", 
+     main="Average Number of Steps by 5-Minute Interval\nWeekends: 10/1/2012-11/30/2012",
+     xlab = "5-Minute Interval of Day", 
+     ylab="Average Number of Steps")
+```
